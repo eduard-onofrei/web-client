@@ -7,12 +7,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,10 +28,13 @@ public class Application implements CommandLineRunner {
 
     private static final String SERVICE1 = "http://localhost:8080";
     private static final String SERVICE2 = "http://localhost:8085";
-    private static final int NUMBER_OF_THREADS = 100;
+    private static final int NUMBER_OF_THREADS = 2000;
 
     @Autowired
-    private WebClient webClient;
+    private WebClient webClient1;
+
+    @Autowired
+    private WebClient webClient2;
 
     private ConcurrentMap<String, ResponseEntity<Account>> createdAccounts = new ConcurrentHashMap<>();
 
@@ -48,9 +48,9 @@ public class Application implements CommandLineRunner {
     public void run(String... args) throws Exception {
         long t0 = System.currentTimeMillis();
         initialLoad();
-        log.info("Created {}", createdAccounts);
         log.info("Initial load duration: {}", System.currentTimeMillis()-t0);
-        process();
+        process(SERVICE1);
+        process(SERVICE2);
         log.info("Tiempo total de ejecución: {}", System.currentTimeMillis()- t0);
     }
 
@@ -60,8 +60,8 @@ public class Application implements CommandLineRunner {
         Stream.concat(createCallers(SERVICE1, "Pepe"), createCallers(SERVICE2, "Juan"))
             .forEach(task -> {
                 executor.submit(task);
-                executor.shutdown();
             });
+        executor.shutdown();
         final boolean allRequestsFinished = executor.awaitTermination(30, TimeUnit.SECONDS);
         log.info("AllRequestsFinished: {}", allRequestsFinished);
     }
@@ -69,17 +69,16 @@ public class Application implements CommandLineRunner {
     private Stream<Runnable> createCallers(String host, String ownerName) {
         return IntStream.range(0, NUMBER_OF_THREADS).parallel()
                 .mapToObj(n -> () -> {
-                    final ResponseEntity<Account> accountResponseEntity = webClient.post()
+                    webClient1.post()
                             .uri(host)
                             .bodyValue(Account.builder().owner(ownerName + getRandom()).value((double) n).build())
                             .retrieve()
                             .toEntity(Account.class)
                             .map(peekedAccount -> {
-                                log.info(peekedAccount.toString());
+                                createdAccounts.put(ownerName+n, peekedAccount);
                                 return peekedAccount;
                             })
                             .block();
-                    createdAccounts.put(ownerName+n, accountResponseEntity);
                 });
     }
 
@@ -88,15 +87,15 @@ public class Application implements CommandLineRunner {
         return rn.nextInt(5) + 1;
     }
 
-    private void process() {
+    private void process(String host) {
         final List<Flux<Account>> accountMonoList = createdAccounts.keySet().stream()
                 .parallel()
-                .map(owner -> webClient.get()
-                        .uri(SERVICE1 + "?owner=" + owner)
+                .map(owner -> webClient1.get()
+                        .uri(host + "?owner=" + owner)
                         .retrieve()
                         .bodyToFlux(Account.class)
-                        .flatMap(account -> webClient.post().uri(SERVICE1) //todo loguear
-                                .bodyValue(account.toBuilder().owner(account.getOwner() + "new").build()).retrieve().bodyToMono(Account.class)))
+                        .flatMap(account -> webClient1.post().uri(host) //todo loguear
+                                .bodyValue(account.toBuilder().owner(account.getOwner() + "new"+host).build()).retrieve().bodyToMono(Account.class)))
                 .collect(Collectors.toList());
         Flux.fromIterable(accountMonoList).flatMap(Function.identity()).blockLast();
     }

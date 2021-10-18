@@ -1,1 +1,5 @@
 server.port: 8086
+reactor:
+  netty:
+    pool:
+      maxConnections: 1000

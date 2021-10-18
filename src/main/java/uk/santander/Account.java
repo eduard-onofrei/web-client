@@ -1,7 +1,9 @@
 package uk.santander;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -9,10 +11,12 @@ import lombok.ToString;
 @Setter
 @ToString
 @Builder(toBuilder = true)
+@NoArgsConstructor
+@AllArgsConstructor
 public class Account {
 
     private String id;
-    private final String owner;
-    private final Double value;
-    private final double result;
+    private String owner;
+    private Double value;
+    private double result;
 }
